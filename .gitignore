@@ -1,0 +1,23 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Chart packages and local build output
+*.tgz
+/dist/
+
+# Local configuration and credentials (the *.example file is the template)
+config.json
+config.*.json
+!config.*.json.example
+*.token
+*.env
+.env*
+secrets/
+
+# Coflnet-internal review manifests, OpenBao policy and the Hypixel source config: they describe our own
+# clusters and stay out of this public repository (production is deployed from Fleet).
+/deploy/*.yaml
+/deploy/*.hcl
+/deploy/INTERNAL.md
+/config.hypixel.json.example
