@@ -1,0 +1,104 @@
+name: Release
+
+# Push a tag vX.Y.Z to publish:
+#   ghcr.io/coflnet/toduen-collector:X.Y.Z          (image)
+#   oci://ghcr.io/coflnet/charts/toduen-collector   (chart, version X.Y.Z, appVersion X.Y.Z)
+# The tag, Chart.yaml version and Chart.yaml appVersion must all agree (checked below).
+on:
+  push:
+    tags: ['v[0-9]+.[0-9]+.[0-9]+']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  IMAGE: ghcr.io/coflnet/toduen-collector
+  CHART_REPO: oci://ghcr.io/coflnet/charts
+  CHART_DIR: deploy/helm/toduen-collector
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - id: version
+        name: Tag must match Chart.yaml
+        run: |
+          set -eu
+          version="${GITHUB_REF_NAME#v}"
+          chart_version="$(sed -n 's/^version: *"\{0,1\}\([^"]*\)"\{0,1\} *$/\1/p' "$CHART_DIR/Chart.yaml")"
+          app_version="$(sed -n 's/^appVersion: *"\{0,1\}\([^"]*\)"\{0,1\} *$/\1/p' "$CHART_DIR/Chart.yaml")"
+          [ "$chart_version" = "$version" ] || { echo "Chart version $chart_version != tag $version" >&2; exit 1; }
+          [ "$app_version" = "$version" ] || { echo "Chart appVersion $app_version != tag $version" >&2; exit 1; }
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.13'
+      - uses: azure/setup-helm@1a275c3b69536ee54be43f2070a358922e12c8d4 # v4
+      - name: Install PyYAML (chart tests)
+        run: python -m pip install --disable-pip-version-check pyyaml
+      - name: Unit and chart tests
+        run: python -m unittest discover -s tests -v
+      - name: Helm lint
+        run: helm lint "$CHART_DIR" --set-string toduen.projectId=e627bc7e-01b6-46ed-9e4d-72ed598e3634 --set-string toduen.apiToken=todc.lint
+
+  image:
+    needs: verify
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - name: Build (runs the Dockerfile test stage)
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          load: true
+          push: false
+          tags: ${{ env.IMAGE }}:${{ needs.verify.outputs.version }}
+          build-args: |
+            VERSION=${{ needs.verify.outputs.version }}
+            REVISION=${{ github.sha }}
+      - name: Scan (fixable HIGH/CRITICAL blocks the release)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ${{ env.IMAGE }}:${{ needs.verify.outputs.version }}
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: '1'
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Push
+        run: docker push "$IMAGE:${{ needs.verify.outputs.version }}"
+
+  chart:
+    needs: [verify, image]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: azure/setup-helm@1a275c3b69536ee54be43f2070a358922e12c8d4 # v4
+      - name: Package
+        run: helm package "$CHART_DIR" --destination "$RUNNER_TEMP/chart"
+      - name: Push to GHCR
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_ACTOR: ${{ github.actor }}
+          VERSION: ${{ needs.verify.outputs.version }}
+        run: |
+          set -eu
+          printf '%s' "$GH_TOKEN" | helm registry login ghcr.io --username "$GH_ACTOR" --password-stdin
+          helm push "$RUNNER_TEMP/chart/toduen-collector-$VERSION.tgz" "$CHART_REPO"
