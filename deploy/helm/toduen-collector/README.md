@@ -1,0 +1,68 @@
+# Todün collector (self-hosted Prometheus)
+
+Reads the PromQL queries you list from **your** Prometheus and **pushes** the results to Todün over HTTPS.
+Nothing in your cluster is exposed: the chart creates no Service, Ingress or inbound port, and Todün never connects to you.
+No operator approval of a hostname is needed.
+
+## Install
+
+1. In Todün open **Data sources -> Prometheus (self-hosted)**, name the project and declare the metrics you want
+   (key, display name, unit, `sum` or `latest`). Todün shows the project id, a one-time write-only token and a ready
+   `values.yaml` for this chart.
+2. Install:
+
+   ```sh
+   helm install toduen-collector oci://ghcr.io/coflnet/charts/toduen-collector --version 0.1.0 \
+     --namespace monitoring \
+     --set toduen.projectId=<project id> \
+     --set toduen.apiToken=<token> \
+     -f metrics.yaml        # the generated `metrics:` list (or edit values.yaml)
+   ```
+
+   To keep the token out of Helm values, create a Secret yourself and pass `--set toduen.existingSecret=<name>`
+   (key `token`). `helm template`/`install` fails with a clear message if the token, project id or metric list is
+   missing or invalid.
+3. Check: `kubectl logs deploy/toduen-collector-toduen-collector`; the pod becomes Ready after the first delivery.
+
+## What leaves your cluster
+
+Only the numeric results of the queries under `metrics`, one value per key and UTC day, plus the key, unit and
+aggregation. Todün rejects any key you did not declare there and any unit/aggregation that differs from the
+declaration. Query text, label values, series and everything else stay in your cluster.
+
+## Values
+
+| Value | Meaning |
+|---|---|
+| `toduen.url` | Todün API base, HTTPS only (default `https://toduen.com`) |
+| `toduen.projectId` | Project id from Todün (required) |
+| `toduen.apiToken` / `toduen.existingSecret` | Write-only token, or a Secret with key `token` (one of them is required) |
+| `prometheus.url` | `https://...` or `http://` to an in-cluster Service (`name` or `*.svc[.cluster.local]`) |
+| `prometheus.auth.type` / `.existingSecret` | `none`, `bearer` (key `token`) or `basic` (key `basic` = `user:password`) |
+| `intervalSeconds` | Run every N seconds, 30 to 3600 (default 900) |
+| `dayOffsets` | UTC days re-sent each run: `0` today, `1` yesterday, up to `7` (default `[0, 1]`) |
+| `metrics[]` | `key`, `displayName`, `unit`, `aggregation`, `query`, optional `timestampQuery` (see `values.yaml`) |
+| `image.repository` / `tag` / `digest` | Collector image; `digest` pins it |
+| `networkPolicy.enabled` | Egress-only policy (DNS, Prometheus, Todün on 443); default on |
+
+Query placeholders: `{range}` seconds elapsed in the UTC day (write `[{range}s]`), `{day}`, `{day_start}`, `{day_end}`.
+A closed day is evaluated at its end, so `increase(x[{range}s])` yields that day's total. A query that returns no data,
+several series or NaN is skipped for that run and never sent as zero; other metrics in the same run are still delivered.
+Use `sum(...)`/`max(...)` so the query returns exactly one series.
+
+## Security
+
+Non-root, read-only root filesystem, all capabilities dropped, seccomp `RuntimeDefault`, no service account token.
+The token is only in a Secret mounted read-only at `/var/run/secrets/toduen/token` (mode 0400; the pod `fsGroup`
+makes it group-readable for the non-root user), never in an environment variable or ConfigMap, and the collector rereads
+it each run, so a rotated Secret takes effect without a restart. A plain NetworkPolicy cannot match host names: by default
+443 is allowed to public addresses only; restrict `networkPolicy.todun.cidrs` or use your CNI's FQDN policy for more.
+
+## Token expiry
+
+The token expires (see the date in Todün). Rotate it in Todün and `helm upgrade --reuse-values --set toduen.apiToken=<new>`
+(or update your Secret) before then; after expiry Todün answers 401 and the pod stays not Ready.
+
+## Development
+
+`python -m unittest discover -s ../../../tests -v` (from this directory) includes template assertions when `helm` and PyYAML are installed.

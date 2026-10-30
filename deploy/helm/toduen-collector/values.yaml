@@ -1,0 +1,88 @@
+# Todün collector: reads the PromQL queries listed under `metrics` from YOUR Prometheus and PUSHES the
+# results to Todün over HTTPS. Nothing in your cluster is exposed: no Service, no Ingress, no inbound port.
+
+toduen:
+  # Todün API base URL (HTTPS only).
+  url: https://toduen.com
+  # Project id shown in Todün -> Data sources -> Prometheus (self-hosted).
+  projectId: ""
+  # Authenticates this collector to your Todün account. It is write-only: it can add
+  # observations for the metrics listed below to this project, and cannot read anything.
+  # It expires; the expiry date is shown in Todün -> Data sources -> Prometheus (self-hosted).
+  # Rotate it there and run `helm upgrade` with the new value before it expires.
+  apiToken: ""
+  # Alternatively, name of an existing Secret in this namespace with the token under key `token`.
+  existingSecret: ""
+
+prometheus:
+  # Must be https://..., or http:// to an in-cluster Service (single-label name or *.svc[.cluster.local]).
+  url: http://prometheus-operated.monitoring.svc:9090
+  # Optional authentication, read from an existing Secret in this namespace (never from values):
+  auth:
+    type: none        # none | bearer | basic
+    existingSecret: ""
+    # bearer: Secret key `token` holds the bearer token.
+    # basic:  Secret key `basic` holds `username:password`.
+
+# How often the metrics are read and sent, in seconds (30-3600). A day's value is re-sent on every run,
+# so late corrections are picked up; retries never double count.
+intervalSeconds: 900
+# UTC days to (re)send each run: 0 = today (running), 1 = yesterday (final value after midnight), up to 7.
+dayOffsets: [0, 1]
+# Optional metrics: reject a source value whose `timestampQuery` result is older than this.
+maxSourceAgeSeconds: 600
+
+# Only the metrics listed here are read and sent to Todün. Nothing else leaves your cluster.
+# Each key must also be declared in Todün (the generated file already matches); Todün rejects any other key
+# and any unit/aggregation that differs from the declaration.
+#   key          lowercase letters, digits and _ ; starts with a letter; max 63 characters
+#   unit         count | users | requests | eur | usd | gbp | coins | seconds | ms | bytes | percent
+#   aggregation  sum    = the amount for one UTC day (summed across days), e.g. signups per day
+#                latest = a gauge at the end of the day (never summed), e.g. queue depth
+#   query        PromQL returning exactly ONE series (wrap in sum()/max()). Placeholders:
+#                {range} seconds elapsed in the UTC day (use as [{range}s]), {day} 2026-10-25,
+#                {day_start} / {day_end} UTC unix seconds. Closed days are evaluated at their end.
+#   timestampQuery (optional) PromQL returning when the source value was produced, for freshness checks.
+# A query returning no data, several series, or NaN is skipped for that run. It is never sent as zero.
+metrics:
+  - key: signups
+    displayName: Signups
+    unit: count
+    aggregation: sum
+    query: sum(increase(app_signups_total[{range}s]))
+
+image:
+  repository: ghcr.io/coflnet/toduen-collector
+  tag: ""            # defaults to the chart appVersion
+  digest: ""         # sha256:... pins the image and overrides tag
+  pullPolicy: IfNotPresent
+imagePullSecrets: []
+
+resources:
+  requests: {cpu: 10m, memory: 32Mi}
+  limits: {cpu: 200m, memory: 96Mi}
+
+serviceAccount:
+  create: true
+  name: ""
+
+# Egress-only NetworkPolicy: DNS, your Prometheus, and Todün on 443. Switch off if your CNI does not enforce policies.
+networkPolicy:
+  enabled: true
+  dns:
+    namespaceSelector: {kubernetes.io/metadata.name: kube-system}
+    podSelector: {k8s-app: kube-dns}
+  prometheus:
+    # Namespace/pod labels of Prometheus. The namespace defaults to the one in a *.<namespace>.svc URL.
+    namespace: ""
+    podSelector: {}
+  todun:
+    # Plain NetworkPolicy cannot match host names. By default 443 is allowed to public addresses only
+    # (private ranges excluded). Replace with your egress proxy / Todün CIDRs, or use a FQDN-aware CNI policy.
+    cidrs: ["0.0.0.0/0"]
+    except: ["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"]
+
+podAnnotations: {}
+nodeSelector: {}
+tolerations: []
+affinity: {}

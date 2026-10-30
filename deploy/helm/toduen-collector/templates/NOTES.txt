@@ -1,0 +1,7 @@
+Todün collector installed. It pushes {{ len .Values.metrics }} metric(s) to {{ .Values.toduen.url }} every {{ .Values.intervalSeconds }}s; nothing is exposed.
+
+Check it:
+  kubectl -n {{ .Release.Namespace }} logs deploy/{{ include "toduen-collector.fullname" . }}
+  kubectl -n {{ .Release.Namespace }} get pods -l app.kubernetes.io/instance={{ .Release.Name }}   # READY once the first delivery succeeded
+
+The write-only token expires. Rotate it in Todün and `helm upgrade --set toduen.apiToken=...` before then.

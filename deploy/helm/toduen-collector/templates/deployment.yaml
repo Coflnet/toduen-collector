@@ -1,0 +1,79 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "toduen-collector.fullname" . }}
+  labels: {{- include "toduen-collector.labels" . | nindent 4 }}
+spec:
+  # Exactly one collector per project: Todün accepts one observation per ten seconds per project.
+  replicas: 1
+  strategy: {type: Recreate}
+  selector:
+    matchLabels: {{- include "toduen-collector.selector" . | nindent 6 }}
+  template:
+    metadata:
+      labels: {{- include "toduen-collector.selector" . | nindent 8 }}
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      serviceAccountName: {{ if .Values.serviceAccount.create }}{{ default (include "toduen-collector.fullname" .) .Values.serviceAccount.name }}{{ else }}{{ default "default" .Values.serviceAccount.name }}{{ end }}
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile: {type: RuntimeDefault}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: collector
+          image: "{{ .Values.image.repository }}{{ if .Values.image.digest }}@{{ .Values.image.digest }}{{ else }}:{{ default .Chart.AppVersion .Values.image.tag }}{{ end }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          env:
+            - {name: COLLECTOR_CONFIG, value: /etc/collector/config.json}
+          ports:
+            - {name: diagnostics, containerPort: 9090}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+            seccompProfile: {type: RuntimeDefault}
+          resources: {{- toYaml .Values.resources | nindent 12 }}
+          readinessProbe:
+            httpGet: {path: /healthz, port: diagnostics}
+            periodSeconds: 60
+          volumeMounts:
+            - {name: config, mountPath: /etc/collector, readOnly: true}
+            - {name: toduen-token, mountPath: /var/run/secrets/toduen, readOnly: true}
+            {{- if ne .Values.prometheus.auth.type "none" }}
+            - {name: prometheus-auth, mountPath: /var/run/secrets/prometheus, readOnly: true}
+            {{- end }}
+      volumes:
+        - name: config
+          configMap: {name: {{ include "toduen-collector.fullname" . }}}
+        - name: toduen-token
+          secret:
+            secretName: {{ include "toduen-collector.tokenSecret" . }}
+            defaultMode: 0400
+            items: [{key: token, path: token}]
+        {{- if ne .Values.prometheus.auth.type "none" }}
+        - name: prometheus-auth
+          secret:
+            secretName: {{ .Values.prometheus.auth.existingSecret }}
+            defaultMode: 0400
+            items: [{key: {{ ternary "token" "basic" (eq .Values.prometheus.auth.type "bearer") }}, path: {{ ternary "token" "basic" (eq .Values.prometheus.auth.type "bearer") }}}]
+        {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity: {{- toYaml . | nindent 8 }}
+      {{- end }}
