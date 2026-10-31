@@ -12,7 +12,7 @@ No operator approval of a hostname is needed.
 2. Install:
 
    ```sh
-   helm install toduen-collector oci://ghcr.io/coflnet/charts/toduen-collector --version 0.1.2 \
+   helm install toduen-collector oci://ghcr.io/coflnet/charts/toduen-collector --version 0.1.3 \
      --namespace monitoring \
      --set toduen.projectId=<project id> \
      --set toduen.apiToken=<token> \
