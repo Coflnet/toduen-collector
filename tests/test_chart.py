@@ -174,5 +174,14 @@ class ReleaseMetadataTests(unittest.TestCase):
         self.assertIn("runAsGroup: 65532", deployment)
 
 
+    def test_runtime_image_drops_pip(self):
+        # Regression: pip's vendored urllib3/msgpack failed the v0.1.0 release scan although the collector never uses pip.
+        dockerfile_path = Path(__file__).parents[1] / "Dockerfile"
+        if not dockerfile_path.exists():
+            self.skipTest("Dockerfile not in build context")
+        runtime_stage = dockerfile_path.read_text().rsplit("\nFROM ", 1)[1]
+        self.assertIn("pip uninstall -y pip", runtime_stage)
+        self.assertNotIn("pip install", runtime_stage)
+
 if __name__ == "__main__":
     unittest.main()

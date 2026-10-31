@@ -19,6 +19,10 @@ LABEL org.opencontainers.image.title="toduen-collector" \
       org.opencontainers.image.licenses="${LICENSE}" \
       org.opencontainers.image.version="${VERSION}" \
       org.opencontainers.image.revision="${REVISION}"
+# The collector is stdlib only: drop pip, whose vendored libraries (urllib3, msgpack, ...) are
+# never used at runtime but carry CVEs that fail the release scan.
+RUN python -m pip uninstall -y pip \
+    && rm -rf /usr/local/lib/python3.*/ensurepip /root/.cache
 WORKDIR /app
 COPY --from=test /app/collector.py /app/collector.py
 # No bytecode writes: the chart runs with a read-only root filesystem and as UID/GID 65532.
