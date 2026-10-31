@@ -1,6 +1,6 @@
 # toduen-collector
 
-Pushes selected Prometheus metrics from your cluster to [Todün](https://toduen.com). It reads the PromQL queries you
+Pushes selected Prometheus metrics from your cluster to [Todün](https://dash.coflnet.com). It reads the PromQL queries you
 list from **your** Prometheus and posts one typed value per metric and UTC day to Todün's
 `/api/collector/observations` with a write-only token. Outbound only: no Service, Ingress or inbound port.
 Standard-library Python, no dependencies.
@@ -35,6 +35,18 @@ image X.Y.Z). All values, the data that leaves your cluster, token rotation and 
   `metrics` is a list of `{ key, displayName, unit, aggregation, query, timestampQuery? }`; `{range}`, `{day}`,
   `{day_start}`, `{day_end}` are available in queries. Prometheus auth: `prometheusTokenFile` (bearer) or
   `prometheusBasicAuthFile` (`user:password`).
+
+## AI agents
+
+Todün's MCP server (`https://dash-api.coflnet.com/api/mcp`, OAuth login) lets a coding agent set this up for you. Its
+`setup_prometheus_collector` tool creates the project and returns a ready `values.yaml`.
+
+```sh
+claude mcp add --transport http toduen https://dash-api.coflnet.com/api/mcp
+codex mcp add toduen --url https://dash-api.coflnet.com/api/mcp && codex mcp login toduen
+```
+
+Agent-readable docs: https://dash.coflnet.com/docs/prometheus-collector.md. See also [AGENTS.md](AGENTS.md).
 
 ## For developers
 
