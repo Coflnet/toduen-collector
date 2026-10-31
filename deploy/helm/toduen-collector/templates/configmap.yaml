@@ -1,6 +1,6 @@
 {{- include "toduen-collector.validate" . -}}
 {{- $config := dict "prometheusUrl" .Values.prometheus.url "todUrl" .Values.toduen.url "projectId" .Values.toduen.projectId
-    "todTokenFile" "/var/run/secrets/toduen/token" "intervalSeconds" (int .Values.intervalSeconds)
+    "todTokenFile" (include "toduen-collector.tokenPath" .) "intervalSeconds" (int .Values.intervalSeconds)
     "maxSourceAgeSeconds" (int .Values.maxSourceAgeSeconds) "dayOffsets" .Values.dayOffsets -}}
 {{- if eq .Values.prometheus.auth.type "bearer" }}{{ $_ := set $config "prometheusTokenFile" "/var/run/secrets/prometheus/token" }}{{ end -}}
 {{- if eq .Values.prometheus.auth.type "basic" }}{{ $_ := set $config "prometheusBasicAuthFile" "/var/run/secrets/prometheus/basic" }}{{ end -}}

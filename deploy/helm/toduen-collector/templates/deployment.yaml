@@ -11,7 +11,11 @@ spec:
     matchLabels: {{- include "toduen-collector.selector" . | nindent 6 }}
   template:
     metadata:
-      labels: {{- include "toduen-collector.selector" . | nindent 8 }}
+      labels:
+        {{- include "toduen-collector.selector" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
       annotations:
         checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
         {{- with .Values.podAnnotations }}
@@ -19,7 +23,7 @@ spec:
         {{- end }}
     spec:
       serviceAccountName: {{ if .Values.serviceAccount.create }}{{ default (include "toduen-collector.fullname" .) .Values.serviceAccount.name }}{{ else }}{{ default "default" .Values.serviceAccount.name }}{{ end }}
-      automountServiceAccountToken: false
+      automountServiceAccountToken: {{ .Values.serviceAccount.automountToken | default false }}
       enableServiceLinks: false
       securityContext:
         runAsNonRoot: true
@@ -49,24 +53,34 @@ spec:
             periodSeconds: 60
           volumeMounts:
             - {name: config, mountPath: /etc/collector, readOnly: true}
+            {{- if not .Values.toduen.tokenFile }}
             - {name: toduen-token, mountPath: /var/run/secrets/toduen, readOnly: true}
+            {{- end }}
             {{- if ne .Values.prometheus.auth.type "none" }}
             - {name: prometheus-auth, mountPath: /var/run/secrets/prometheus, readOnly: true}
+            {{- end }}
+            {{- with .Values.extraVolumeMounts }}
+            {{- toYaml . | nindent 12 }}
             {{- end }}
       volumes:
         - name: config
           configMap: {name: {{ include "toduen-collector.fullname" . }}}
+        {{- if not .Values.toduen.tokenFile }}
         - name: toduen-token
           secret:
             secretName: {{ include "toduen-collector.tokenSecret" . }}
             defaultMode: 0400
             items: [{key: token, path: token}]
+        {{- end }}
         {{- if ne .Values.prometheus.auth.type "none" }}
         - name: prometheus-auth
           secret:
             secretName: {{ .Values.prometheus.auth.existingSecret }}
             defaultMode: 0400
             items: [{key: {{ ternary "token" "basic" (eq .Values.prometheus.auth.type "bearer") }}, path: {{ ternary "token" "basic" (eq .Values.prometheus.auth.type "bearer") }}}]
+        {{- end }}
+        {{- with .Values.extraVolumes }}
+        {{- toYaml . | nindent 8 }}
         {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector: {{- toYaml . | nindent 8 }}

@@ -118,7 +118,7 @@ class GenericMetricTests(unittest.TestCase):
         self.sent = []
         self.queries = []
         self.values = {"signups": "12.5", "depth": "7"}
-        self.config = {"prometheusUrl": "http://prometheus-operated.monitoring.svc:9090", "todUrl": "https://toduen.com",
+        self.config = {"prometheusUrl": "http://prometheus-operated.monitoring.svc:9090", "todUrl": "https://dash-api.coflnet.com",
                        "projectId": "e627bc7e-01b6-46ed-9e4d-72ed598e3634", "todTokenFile": str(self.token),
                        "metrics": [
                            {"key": "signups", "displayName": "Signups", "unit": "count", "aggregation": "sum", "query": "signups_query[{range}s] {day_start} {day_end} {day}"},
@@ -142,7 +142,7 @@ class GenericMetricTests(unittest.TestCase):
         self.assertEqual(payload["day"], "2026-10-25")
         self.assertEqual(payload["observedAt"], "2026-10-25T15:00:00Z")
         self.assertEqual(self.queries[0][0], "signups_query[54000s] 1792886400 1792972800 2026-10-25")
-        self.assertEqual(self.sent[0][0], "https://toduen.com/api/collector/observations")
+        self.assertEqual(self.sent[0][0], "https://dash-api.coflnet.com/api/collector/observations")
 
     def test_closed_day_is_evaluated_at_day_end_and_is_reproducible(self):
         collector = module.Collector({**self.config, "dayOffsets": [1]}, self.transport)
@@ -201,9 +201,9 @@ class GenericMetricTests(unittest.TestCase):
 
     def test_tod_rejection_reason_is_reported(self):
         import io, urllib.error
-        error = urllib.error.HTTPError("https://toduen.com", 400, "Bad Request", {}, io.BytesIO(b'{"error":"Metric \'x\' is not declared"}'))
+        error = urllib.error.HTTPError("https://dash-api.coflnet.com", 400, "Bad Request", {}, io.BytesIO(b'{"error":"Metric \'x\' is not declared"}'))
         with unittest.mock.patch("urllib.request.OpenerDirector.open", side_effect=error), self.assertRaisesRegex(module.CollectorError, "http_400: Metric 'x' is not declared"):
-            module.request_json("https://toduen.com/api/collector/observations", "t", {"a": 1})
+            module.request_json("https://dash-api.coflnet.com/api/collector/observations", "t", {"a": 1})
 
 
 if __name__ == "__main__":

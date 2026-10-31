@@ -19,16 +19,28 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- if .Values.toduen.existingSecret -}}{{ .Values.toduen.existingSecret }}{{- else -}}{{ include "toduen-collector.fullname" . }}-token{{- end -}}
 {{- end -}}
 
+{{/* Path of the token file inside the container. */}}
+{{- define "toduen-collector.tokenPath" -}}
+{{- if .Values.toduen.tokenFile -}}{{ .Values.toduen.tokenFile }}{{- else -}}/var/run/secrets/toduen/token{{- end -}}
+{{- end -}}
+
 {{/* Validates all user input once, with messages that say what to set. */}}
 {{- define "toduen-collector.validate" -}}
 {{- if not (regexMatch "^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}$" (.Values.toduen.projectId | toString)) -}}
 {{- fail "toduen.projectId must be the project id (a UUID) shown in Todün under Data sources -> Prometheus (self-hosted)." -}}
 {{- end -}}
-{{- if and .Values.toduen.apiToken .Values.toduen.existingSecret -}}
-{{- fail "Set either toduen.apiToken or toduen.existingSecret, not both." -}}
+{{- $sources := 0 -}}
+{{- if .Values.toduen.apiToken }}{{ $sources = add1 $sources }}{{ end -}}
+{{- if .Values.toduen.existingSecret }}{{ $sources = add1 $sources }}{{ end -}}
+{{- if .Values.toduen.tokenFile }}{{ $sources = add1 $sources }}{{ end -}}
+{{- if gt $sources 1 -}}
+{{- fail "Set exactly one of toduen.apiToken, toduen.existingSecret or toduen.tokenFile, not several." -}}
 {{- end -}}
-{{- if not (or .Values.toduen.apiToken .Values.toduen.existingSecret) -}}
-{{- fail "Set toduen.apiToken (the write-only token from Todün) or toduen.existingSecret (a Secret with key `token`)." -}}
+{{- if eq $sources 0 -}}
+{{- fail "Set one of toduen.apiToken (the write-only token from Todün), toduen.existingSecret (a Secret with key `token`) or toduen.tokenFile (an absolute path to a token file provided by a Vault/OpenBao agent or CSI volume)." -}}
+{{- end -}}
+{{- if and .Values.toduen.tokenFile (not (hasPrefix "/" (.Values.toduen.tokenFile | toString))) -}}
+{{- fail "toduen.tokenFile must be an absolute path (for example /vault/secrets/toduen)." -}}
 {{- end -}}
 {{- if not (hasPrefix "https://" .Values.toduen.url) -}}
 {{- fail "toduen.url must start with https://" -}}

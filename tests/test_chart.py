@@ -100,9 +100,12 @@ class ChartTests(unittest.TestCase):
         cases = [
             ({"toduen": {"apiToken": None}}, "toduen.apiToken"),
             ({"toduen": {"apiToken": None, "existingSecret": "x", "projectId": None}}, "toduen.projectId"),
-            ({"toduen": {"existingSecret": "x"}}, "not both"),
+            ({"toduen": {"existingSecret": "x"}}, "exactly one"),
             ({"toduen": {"projectId": "nope"}}, "toduen.projectId"),
-            ({"toduen": {"url": "http://toduen.com"}}, "https://"),
+            ({"toduen": {"url": "http://dash-api.coflnet.com"}}, "https://"),
+            ({"toduen": {"apiToken": None, "tokenFile": "/vault/secrets/toduen", "existingSecret": "x"}}, "exactly one"),
+            ({"toduen": {"tokenFile": "/vault/secrets/toduen"}}, "exactly one"),
+            ({"toduen": {"apiToken": None, "tokenFile": "vault/secrets/toduen"}}, "absolute path"),
             ({"metrics": []}, "metrics is empty"),
             ({"metrics": [{**metric, "unit": "furlongs"}]}, "unit must be one of"),
             ({"metrics": [{**metric, "aggregation": "avg"}]}, "aggregation must be"),
@@ -137,6 +140,55 @@ class ChartTests(unittest.TestCase):
         mounts = docs["Deployment"]["spec"]["template"]["spec"]["containers"][0]["volumeMounts"]
         self.assertTrue(next(m for m in mounts if m["name"] == "prometheus-auth")["readOnly"])
         self.assertNotIn("prom-auth", docs["ConfigMap"]["data"]["config.json"])
+
+    def test_default_todun_url_is_the_api_host(self):
+        # Regression: the default was https://toduen.com, which has no DNS, so deliveries silently failed.
+        config = json.loads(documents(self.render_ok())["ConfigMap"]["data"]["config.json"])
+        self.assertEqual(config["todUrl"], "https://dash-api.coflnet.com")
+
+    def test_token_file_renders_no_secret_or_token_volume(self):
+        docs = documents(self.render_ok({"toduen": {"apiToken": None, "tokenFile": "/vault/secrets/toduen"}}))
+        self.assertNotIn("Secret", docs)
+        config = json.loads(docs["ConfigMap"]["data"]["config.json"])
+        self.assertEqual(config["todTokenFile"], "/vault/secrets/toduen")
+        pod = docs["Deployment"]["spec"]["template"]["spec"]
+        self.assertNotIn("toduen-token", [v["name"] for v in pod.get("volumes", [])])
+        self.assertNotIn("toduen-token", [m["name"] for m in pod["containers"][0]["volumeMounts"]])
+
+    def test_default_token_path_unchanged(self):
+        config = json.loads(documents(self.render_ok())["ConfigMap"]["data"]["config.json"])
+        self.assertEqual(config["todTokenFile"], "/var/run/secrets/toduen/token")
+
+    def test_extra_volumes_mounts_labels_and_annotations(self):
+        docs = documents(self.render_ok({
+            "toduen": {"apiToken": None, "tokenFile": "/mnt/secrets/token"},
+            "extraVolumes": [{"name": "csi", "csi": {"driver": "secrets-store.csi.k8s.io", "readOnly": True}}],
+            "extraVolumeMounts": [{"name": "csi", "mountPath": "/mnt/secrets", "readOnly": True}],
+            "podLabels": {"team": "shop"},
+            "podAnnotations": {"vault.hashicorp.com/agent-inject": "true"},
+            "serviceAccount": {"annotations": {"eks.amazonaws.com/role-arn": "arn:x"}}}))
+        template = docs["Deployment"]["spec"]["template"]
+        self.assertIn({"name": "csi", "csi": {"driver": "secrets-store.csi.k8s.io", "readOnly": True}}, template["spec"]["volumes"])
+        self.assertIn({"name": "csi", "mountPath": "/mnt/secrets", "readOnly": True}, template["spec"]["containers"][0]["volumeMounts"])
+        self.assertEqual(template["metadata"]["labels"]["team"], "shop")
+        self.assertEqual(template["metadata"]["labels"]["app.kubernetes.io/name"], "toduen-collector")
+        self.assertEqual(template["metadata"]["annotations"]["vault.hashicorp.com/agent-inject"], "true")
+        self.assertIn("checksum/config", template["metadata"]["annotations"])
+        self.assertEqual(docs["ServiceAccount"]["metadata"]["annotations"]["eks.amazonaws.com/role-arn"], "arn:x")
+
+    def test_automount_token_defaults_false_and_can_be_enabled(self):
+        docs = documents(self.render_ok())
+        self.assertIs(docs["Deployment"]["spec"]["template"]["spec"]["automountServiceAccountToken"], False)
+        self.assertIs(docs["ServiceAccount"]["automountServiceAccountToken"], False)
+        docs = documents(self.render_ok({"serviceAccount": {"automountToken": True}}))
+        self.assertIs(docs["Deployment"]["spec"]["template"]["spec"]["automountServiceAccountToken"], True)
+        self.assertIs(docs["ServiceAccount"]["automountServiceAccountToken"], True)
+
+    def test_network_policy_extra_egress_is_appended(self):
+        rule = {"to": [{"ipBlock": {"cidr": "10.1.2.3/32"}}], "ports": [{"protocol": "TCP", "port": 8200}]}
+        policy = documents(self.render_ok({"networkPolicy": {"extraEgress": [rule]}}))["NetworkPolicy"]["spec"]
+        self.assertEqual(len(policy["egress"]), 4)
+        self.assertEqual(policy["egress"][-1], rule)
 
     def test_image_digest_overrides_tag(self):
         docs = documents(self.render_ok({"image": {"digest": "sha256:" + "a" * 64}}))

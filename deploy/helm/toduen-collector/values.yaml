@@ -3,16 +3,21 @@
 
 toduen:
   # Todün API base URL (HTTPS only).
-  url: https://toduen.com
+  url: https://dash-api.coflnet.com
   # Project id shown in Todün -> Data sources -> Prometheus (self-hosted).
   projectId: ""
-  # Authenticates this collector to your Todün account. It is write-only: it can add
-  # observations for the metrics listed below to this project, and cannot read anything.
-  # It expires; the expiry date is shown in Todün -> Data sources -> Prometheus (self-hosted).
-  # Rotate it there and run `helm upgrade` with the new value before it expires.
+  # The write-only token authenticates this collector to your Todün account: it can add observations for
+  # the metrics listed below to this project, and cannot read anything. It expires; the expiry date is shown
+  # in Todün -> Data sources -> Prometheus (self-hosted). Rotate it there before it expires.
+  # Provide it in EXACTLY ONE of these three ways (rendering fails if none or several are set):
+  #  1. apiToken: the token itself; the chart creates a Secret (it ends up in the Helm release, so avoid with GitOps).
   apiToken: ""
-  # Alternatively, name of an existing Secret in this namespace with the token under key `token`.
+  #  2. existingSecret: name of a Secret in this namespace with the token under key `token`.
   existingSecret: ""
+  #  3. tokenFile: absolute path of a token file provided by something else, e.g. a Vault/OpenBao Agent
+  #     injector (/vault/secrets/toduen) or a CSI secrets-store volume (mount it via extraVolumes/extraVolumeMounts).
+  #     The chart then creates no Secret and mounts no token volume. The file is reread every run (rotation).
+  tokenFile: ""
 
 prometheus:
   # Must be https://..., or http:// to an in-cluster Service (single-label name or *.svc[.cluster.local]).
@@ -65,6 +70,9 @@ resources:
 serviceAccount:
   create: true
   name: ""
+  annotations: {}      # e.g. IRSA / workload identity annotations
+  # Vault/OpenBao Agent injectors authenticate with the pod's service account token: set true for them.
+  automountToken: false
 
 # Egress-only NetworkPolicy: DNS, your Prometheus, and Todün on 443. Switch off if your CNI does not enforce policies.
 networkPolicy:
@@ -81,8 +89,15 @@ networkPolicy:
     # (private ranges excluded). Replace with your egress proxy / Todün CIDRs, or use a FQDN-aware CNI policy.
     cidrs: ["0.0.0.0/0"]
     except: ["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"]
+  # Extra egress rules appended verbatim, e.g. to let a Vault/OpenBao Agent injector sidecar reach the server.
+  extraEgress: []
+
 
 podAnnotations: {}
+podLabels: {}
+# Extra volumes / mounts for the collector container, e.g. a CSI secrets-store volume holding the token.
+extraVolumes: []
+extraVolumeMounts: []
 nodeSelector: {}
 tolerations: []
 affinity: {}
