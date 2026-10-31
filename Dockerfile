@@ -26,7 +26,7 @@ RUN python -m pip uninstall -y pip \
 WORKDIR /app
 COPY --from=test /app/collector.py /app/collector.py
 # No bytecode writes: the chart runs with a read-only root filesystem and as UID/GID 65532.
-ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 TODUEN_COLLECTOR_VERSION=${VERSION}
 USER 65532:65532
 EXPOSE 9090
 ENTRYPOINT ["python", "/app/collector.py"]

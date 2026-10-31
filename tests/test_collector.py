@@ -206,5 +206,14 @@ class GenericMetricTests(unittest.TestCase):
             module.request_json("https://dash-api.coflnet.com/api/collector/observations", "t", {"a": 1})
 
 
+    def test_requests_send_collector_user_agent(self):
+        response = unittest.mock.MagicMock()
+        response.__enter__.return_value.read.return_value = b"{}"
+        with unittest.mock.patch("urllib.request.OpenerDirector.open", return_value=response) as opened:
+            module.request_json("https://dash-api.coflnet.com/api/collector/observations", "t", {"a": 1})
+        agent = opened.call_args.args[0].get_header("User-agent")
+        self.assertTrue(agent.startswith("toduen-collector/"), agent)
+
+
 if __name__ == "__main__":
     unittest.main()

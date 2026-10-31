@@ -21,6 +21,8 @@ UNITS = {"count", "users", "requests", "eur", "usd", "gbp", "coins", "seconds", 
 AGGREGATIONS = {"sum", "latest"}
 KEY_PATTERN = re.compile(r"^[a-z][a-z0-9_]{0,62}$")
 MAX_METRICS = 100
+# Cloudflare in front of Todün rejects the default "Python-urllib" agent with a bare 403.
+USER_AGENT = "toduen-collector/" + (os.environ.get("TODUEN_COLLECTOR_VERSION") or "dev")
 
 
 class CollectorError(Exception):
@@ -42,7 +44,7 @@ def endpoint(value):
 
 
 def request_json(url, token=None, payload=None):
-    headers = {"Accept": "application/json"}
+    headers = {"Accept": "application/json", "User-Agent": USER_AGENT}
     if token:
         headers["Authorization"] = token if token.startswith("Basic ") else "Bearer " + token
     data = None if payload is None else json.dumps(payload, allow_nan=False).encode()
