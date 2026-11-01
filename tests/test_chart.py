@@ -89,6 +89,14 @@ class ChartTests(unittest.TestCase):
         self.assertEqual(collector.metrics[0]["unit"], "count")
         self.assertFalse(collector.legacy)
 
+    def test_backfill_settings_render_as_integers(self):
+        config = json.loads(documents(self.render_ok({"backfillDays": 30, "backfillIntervalSeconds": 3600}))["ConfigMap"]["data"]["config.json"])
+        self.assertIs(type(config["backfillDays"]), int)
+        self.assertIs(type(config["backfillIntervalSeconds"]), int)
+        self.assertEqual((config["backfillDays"], config["backfillIntervalSeconds"]), (30, 3600))
+        defaults = json.loads(documents(self.render_ok())["ConfigMap"]["data"]["config.json"])
+        self.assertEqual((defaults["backfillDays"], defaults["backfillIntervalSeconds"]), (400, 21600))
+
     def test_existing_secret_renders_no_secret(self):
         docs = documents(self.render_ok({"toduen": {"apiToken": None, "existingSecret": "mine"}}))
         self.assertNotIn("Secret", docs)
