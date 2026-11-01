@@ -12,7 +12,7 @@ No operator approval of a hostname is needed.
 2. Install:
 
    ```sh
-   helm install toduen-collector oci://ghcr.io/coflnet/charts/toduen-collector --version 0.1.3 \
+   helm install toduen-collector oci://ghcr.io/coflnet/charts/toduen-collector --version 0.1.4 \
      --namespace monitoring \
      --set toduen.projectId=<project id> \
      --set toduen.apiToken=<token> \
@@ -40,6 +40,8 @@ declaration. Query text, label values, series and everything else stay in your c
 | `prometheus.url` | `https://...` or `http://` to an in-cluster Service (`name` or `*.svc[.cluster.local]`) |
 | `prometheus.auth.type` / `.existingSecret` | `none`, `bearer` (key `token`) or `basic` (key `basic` = `user:password`) |
 | `intervalSeconds` | Run every N seconds, 30 to 3600 (default 900) |
+| `backfillDays` | Closed UTC days of history sent for new metrics, 0 to 400 (default `400`, `0` disables). Only metrics using just `{range}` and no `timestampQuery` are backfilled, limited by your Prometheus retention |
+| `backfillIntervalSeconds` | Seconds between backfill passes, 300 to 604800 (default `21600`) |
 | `dayOffsets` | UTC days re-sent each run: `0` today, `1` yesterday, up to `7` (default `[0, 1]`) |
 | `metrics[]` | `key`, `displayName`, `unit`, `aggregation`, `query`, optional `timestampQuery` (see `values.yaml`) |
 | `image.repository` / `tag` / `digest` | Collector image; `digest` pins it |

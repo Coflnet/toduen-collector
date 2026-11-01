@@ -36,6 +36,13 @@ image X.Y.Z). All values, the data that leaves your cluster, token rotation and 
   `{day_start}`, `{day_end}` are available in queries. Prometheus auth: `prometheusTokenFile` (bearer) or
   `prometheusBasicAuthFile` (`user:password`).
 
+- History backfill: on start and every `backfillIntervalSeconds` (default 21600) the collector reads
+  `GET /api/collector/coverage?projectId=...` and, for every metric whose query uses only `{range}` (no `{day}`,
+  `{day_start}`, `{day_end}`, no `timestampQuery`), runs one Prometheus `query_range` (range `86400`, step one day,
+  evaluated at UTC midnights) over the missing closed days of the last `backfillDays` (0-400, default 400; 0 disables)
+  and posts them newest first, at most 31 days, 868 metric values and about 240 KB per request, one batch per 30 seconds, to `POST /api/collector/observations/batch`. Days
+  Prometheus has no data for are not sent. A server without the coverage endpoint (404) disables backfill; 403 or 429 on coverage just waits for the next pass.
+
 ## AI agents
 
 Todün's MCP server (`https://dash-api.coflnet.com/api/mcp`, OAuth login) lets a coding agent set this up for you. Its

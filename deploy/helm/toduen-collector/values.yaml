@@ -34,6 +34,13 @@ prometheus:
 intervalSeconds: 900
 # UTC days to (re)send each run: 0 = today (running), 1 = yesterday (final value after midnight), up to 7.
 dayOffsets: [0, 1]
+# History backfill: on start and then every backfillIntervalSeconds the collector asks Todün which days are already
+# stored and sends the missing closed UTC days of up to `backfillDays` back (0-400; 0 disables), as far as your
+# Prometheus still holds data. Only metrics whose query uses just {range} (no {day}, {day_start}, {day_end}) and
+# no timestampQuery are backfilled; each costs one range query per pass against your Prometheus.
+backfillDays: 400
+# Seconds between backfill passes (300-604800). Batches are sent in the idle time between regular runs.
+backfillIntervalSeconds: 21600
 # Optional metrics: reject a source value whose `timestampQuery` result is older than this.
 maxSourceAgeSeconds: 600
 
